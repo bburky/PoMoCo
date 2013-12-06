@@ -36,6 +36,7 @@ class serHandler(threading.Thread):
         self.recieveLock = threading.Lock()
 
         self.serOpen = False
+        self.serOpenDone = False
         self.serNum = 0
 
         self.start()
@@ -83,20 +84,17 @@ class serHandler(threading.Thread):
             """
 
     def connect(self):
-            comList = []
-            comports = serial.tools.list_ports.comports()
-            for comport in comports:
-                    for thing in comport:
-                            #print thing
-                            comList.append(thing)
-            
-            comList = list(set(comList))
+            comList = [port[0] for port in serial.tools.list_ports.comports()]
+
             print "Attempting to connect to Servotor"
             for port in comList:
                     try:
                             ser = serial.Serial(port, baudrate= BAUD_RATE, timeout=2)
+                            # discard any output before command
+                            ser.readall()
                             ser.write('V\n')
-                            result = ser.readline()
+                            # possibly still getting setup garbage, use readall() to get multiple lines
+                            result = ser.readall()
                             if "SERVOTOR" in result:
                                     print "Connect Successful! Connected on port:",port
                                     self.ser = ser
@@ -134,7 +132,10 @@ class serHandler(threading.Thread):
                             pass
                     except:
                         pass
-                    
+
+            # Signal to Controller init that opening ports is done
+            self.serOpenDone = True
+
 class Servo:
 
     def __init__(self,servoNum,serHandler,servoPos=1500,offset=0,active=False):
@@ -221,8 +222,7 @@ class Servo:
 class Controller:
     def __init__(self,servos=32):
         self.serialHandler = serHandler()
-        timeout = time.time()
-        while not (self.serialHandler.serOpen or (time.time()-timeout > 10.0)):
+        while not self.serialHandler.serOpenDone:
             time.sleep(0.01)
         if self.serialHandler.serOpen == False:
             print "Connection to Servotor failed. No robot movement will occur."
